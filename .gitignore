@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.DS_Store
+.idea/
+.vscode/
+# CATATAN: file model/breast_cancer_model.pth sengaja TIDAK diabaikan karena model harus ikut di repository.

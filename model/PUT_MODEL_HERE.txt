@@ -1,0 +1,6 @@
+Letakkan file model hasil unduhan Google Colab di folder ini dengan nama:
+
+    breast_cancer_model.pth
+
+File ini dihasilkan oleh notebook colab/Training_PyTorch_Colab.ipynb (sel terakhir akan mengunduhnya otomatis).
+Hapus file teks ini setelah model dipindahkan (boleh juga dibiarkan).

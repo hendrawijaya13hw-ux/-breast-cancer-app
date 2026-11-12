@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Klasifikasi Breast Cancer</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <h1>Klasifikasi Breast Cancer</h1>
+      <p class="sub">Model PyTorch (MLP) memprediksi tumor <b>jinak (benign)</b> atau <b>ganas (malignant)</b>
+        dari {{ n_features }} fitur hasil pengukuran sel (dataset Breast Cancer Wisconsin).</p>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <form id="form" class="card" novalidate>
+      <div class="card-head">
+        <h2>Data pengukuran</h2>
+        <div class="actions">
+          <button type="button" class="ghost" data-example="benign">Isi contoh jinak</button>
+          <button type="button" class="ghost" data-example="malignant">Isi contoh ganas</button>
+          <button type="button" class="ghost" id="reset">Kosongkan</button>
+        </div>
+      </div>
+
+      {% for title, fields in groups %}
+      <fieldset>
+        <legend>{{ title }}</legend>
+        <div class="grid">
+          {% for f in fields %}
+          <label class="field" for="{{ f.id }}">
+            <span>{{ f.label }}</span>
+            <input id="{{ f.id }}" data-name="{{ f.name }}" type="number" inputmode="decimal" step="any" min="0"
+                   placeholder="{{ '%.4g' % f.min }} – {{ '%.4g' % f.max }}" required>
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      {% endfor %}
+
+      <p class="hint">Placeholder pada kolom menunjukkan rentang nilai pada data latih.</p>
+      <button type="submit" class="primary" id="submit">Prediksi</button>
+    </form>
+
+    <aside class="card result" aria-live="polite">
+      <h2>Hasil prediksi</h2>
+      <div id="empty" class="empty">Belum ada prediksi. Isi data atau pilih contoh, lalu tekan <b>Prediksi</b>.</div>
+      <div id="out" hidden>
+        <div id="badge" class="badge"></div>
+        <div class="bars">
+          <div class="bar-row"><span>Benign (jinak)</span><div class="bar"><i id="bar-benign"></i></div><b id="p-benign"></b></div>
+          <div class="bar-row"><span>Malignant (ganas)</span><div class="bar"><i id="bar-malignant"></i></div><b id="p-malignant"></b></div>
+        </div>
+        <p id="warn" class="warn" hidden></p>
+      </div>
+      <p id="err" class="error" hidden></p>
+
+      {% if metrics %}
+      <dl class="metrics">
+        <dt>Akurasi uji model</dt><dd>{{ '%.2f' % (metrics.get('test_accuracy', 0) * 100) }}%</dd>
+        <dt>F1 uji model</dt><dd>{{ '%.2f' % (metrics.get('f1', 0) * 100) }}%</dd>
+      </dl>
+      {% endif %}
+      <p class="disclaimer">Aplikasi ini untuk keperluan tugas kuliah, bukan alat diagnosis medis.</p>
+    </aside>
+  </main>
+
+  <script>
+    const EXAMPLES = {{ examples | tojson }};
+    const form = document.getElementById('form');
+    const inputs = [...form.querySelectorAll('input[data-name]')];
+    const $ = (id) => document.getElementById(id);
+
+    function fill(values) {
+      inputs.forEach((el) => {
+        const v = values ? values[el.dataset.name] : '';
+        el.value = (v === undefined || v === null || v === '') ? '' : Number(v).toPrecision(6).replace(/\.?0+$/, '');
+        el.classList.remove('invalid');
+      });
+      $('out').hidden = true; $('err').hidden = true; $('empty').hidden = false;
+    }
+
+    form.querySelectorAll('[data-example]').forEach((b) =>
+      b.addEventListener('click', () => fill(EXAMPLES[b.dataset.example])));
+    $('reset').addEventListener('click', () => fill(null));
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const features = {};
+      let bad = 0;
+      inputs.forEach((el) => {
+        const empty = el.value.trim() === '';
+        const neg = !empty && Number(el.value) < 0;
+        el.classList.toggle('invalid', empty || neg);
+        if (empty || neg) bad++;
+        features[el.dataset.name] = el.value;
+      });
+      $('err').hidden = true;
+      if (bad) {
+        $('out').hidden = true; $('empty').hidden = true;
+        $('err').textContent = `${bad} kolom belum terisi atau tidak valid (harus angka ≥ 0).`;
+        $('err').hidden = false;
+        return;
+      }
+      $('submit').disabled = true;
+      try {
+        const res = await fetch('/api/predict', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ features }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error((data.details || [data.error]).join(' '));
+        const pb = data.probabilities.benign, pm = data.probabilities.malignant;
+        const badge = $('badge');
+        badge.textContent = data.label;
+        badge.className = 'badge ' + (data.label_index === 1 ? 'benign' : 'malignant');
+        $('bar-benign').style.width = (pb * 100).toFixed(1) + '%';
+        $('bar-malignant').style.width = (pm * 100).toFixed(1) + '%';
+        $('p-benign').textContent = (pb * 100).toFixed(1) + '%';
+        $('p-malignant').textContent = (pm * 100).toFixed(1) + '%';
+        const warn = $('warn');
+        warn.hidden = data.out_of_range.length === 0;
+        warn.textContent = `${data.out_of_range.length} fitur berada di luar rentang data latih, ` +
+          'sehingga prediksi kurang dapat diandalkan.';
+        $('empty').hidden = true; $('out').hidden = false;
+      } catch (err) {
+        $('out').hidden = true; $('empty').hidden = true;
+        $('err').textContent = 'Gagal memprediksi: ' + err.message;
+        $('err').hidden = false;
+      } finally {
+        $('submit').disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
